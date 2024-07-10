@@ -34,9 +34,10 @@ abstract contract GovernorTimelockAccessMock is
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        string memory description
+        string memory description,
+        uint8 proposalType
     ) public override(Governor, GovernorTimelockAccess) returns (uint256) {
-        return super.propose(targets, values, calldatas, description);
+        return super.propose(targets, values, calldatas, description, proposalType);
     }
 
     function _queueOperations(
@@ -63,8 +64,9 @@ abstract contract GovernorTimelockAccessMock is
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal override(Governor, GovernorTimelockAccess) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
+        return super._cancel(targets, values, calldatas, descriptionHash, proposalType);
     }
 }

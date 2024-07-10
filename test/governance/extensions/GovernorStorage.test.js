@@ -35,21 +35,22 @@ describe('GovernorStorage', function () {
 
       const token = await ethers.deployContract(Token, [tokenName, tokenSymbol, version]);
       const timelock = await ethers.deployContract('TimelockController', [delay, [], [], deployer]);
+      const executor = await ethers.deployContract('ProposalExecutor', [[timelock.target]]);
       const mock = await ethers.deployContract('$GovernorStorageMock', [
         name,
         votingDelay,
         votingPeriod,
         0n,
-        timelock,
+        executor,
         token,
         0n,
       ]);
 
       await owner.sendTransaction({ to: timelock, value });
       await token.$_mint(owner, tokenSupply);
-      await timelock.grantRole(PROPOSER_ROLE, mock);
+      await timelock.grantRole(PROPOSER_ROLE, executor);
       await timelock.grantRole(PROPOSER_ROLE, owner);
-      await timelock.grantRole(CANCELLER_ROLE, mock);
+      await timelock.grantRole(CANCELLER_ROLE, executor);
       await timelock.grantRole(CANCELLER_ROLE, owner);
       await timelock.grantRole(EXECUTOR_ROLE, ethers.ZeroAddress);
       await timelock.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
@@ -106,6 +107,7 @@ describe('GovernorStorage', function () {
             this.proposal.values,
             this.proposal.data,
             this.proposal.descriptionHash,
+            this.proposal.propType,
           ]);
 
           expect(await this.mock.proposalDetails(this.proposal.id)).to.deep.equal([
@@ -113,6 +115,7 @@ describe('GovernorStorage', function () {
             this.proposal.values,
             this.proposal.data,
             this.proposal.descriptionHash,
+            this.proposal.propType,
           ]);
         });
       });

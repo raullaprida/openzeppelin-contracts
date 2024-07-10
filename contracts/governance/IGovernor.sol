@@ -206,7 +206,8 @@ interface IGovernor is IERC165, IERC6372 {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) external pure returns (uint256);
 
     /**
@@ -249,6 +250,12 @@ interface IGovernor is IERC165, IERC6372 {
      * different. In most cases this will be a timestamp.
      */
     function proposalEta(uint256 proposalId) external view returns (uint256);
+
+    /**
+     * @notice module:core
+     * @dev Type of the proposal, which determines the treasury where it is allocated
+     */
+    function proposalType(uint256 proposalId) external view returns (uint8);
 
     /**
      * @notice module:core
@@ -333,7 +340,8 @@ interface IGovernor is IERC165, IERC6372 {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        string memory description
+        string memory description,
+        uint8 proposalType
     ) external returns (uint256 proposalId);
 
     /**
@@ -347,7 +355,8 @@ interface IGovernor is IERC165, IERC6372 {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) external returns (uint256 proposalId);
 
     /**
@@ -363,7 +372,8 @@ interface IGovernor is IERC165, IERC6372 {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) external payable returns (uint256 proposalId);
 
     /**
@@ -376,7 +386,8 @@ interface IGovernor is IERC165, IERC6372 {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) external returns (uint256 proposalId);
 
     /**

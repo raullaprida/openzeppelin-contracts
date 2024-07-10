@@ -9,6 +9,7 @@ import {GovernorTimelockControl} from "../../../governance/extensions/GovernorTi
 import {TimelockController} from "../../../governance/TimelockController.sol";
 import {IVotes} from "../../../governance/utils/IVotes.sol";
 import {IERC165} from "../../../interfaces/IERC165.sol";
+import {ProposalExecutor} from "../../../governance/ProposalExecutor.sol";
 
 contract MyGovernor is
     Governor,
@@ -19,7 +20,7 @@ contract MyGovernor is
 {
     constructor(
         IVotes _token,
-        TimelockController _timelock
+        ProposalExecutor _timelock
     ) Governor("MyGovernor") GovernorVotes(_token) GovernorVotesQuorumFraction(4) GovernorTimelockControl(_timelock) {}
 
     function votingDelay() public pure override returns (uint256) {
@@ -70,12 +71,17 @@ contract MyGovernor is
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal override(Governor, GovernorTimelockControl) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
+        return super._cancel(targets, values, calldatas, descriptionHash, proposalType);
     }
 
     function _executor() internal view override(Governor, GovernorTimelockControl) returns (address) {
         return super._executor();
+    }
+
+    function _isExecutor() internal view override(Governor, GovernorTimelockControl) returns (bool) {
+        return super._isExecutor();
     }
 }

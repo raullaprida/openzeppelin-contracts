@@ -7,6 +7,7 @@ import {IGovernor, Governor} from "../Governor.sol";
 import {TimelockController} from "../TimelockController.sol";
 import {IERC165} from "../../interfaces/IERC165.sol";
 import {SafeCast} from "../../utils/math/SafeCast.sol";
+import {ProposalExecutor} from "../ProposalExecutor.sol";
 
 /**
  * @dev Extension of {Governor} that binds the execution process to an instance of {TimelockController}. This adds a
@@ -23,19 +24,18 @@ import {SafeCast} from "../../utils/math/SafeCast.sol";
  * proposals that have been approved by the voters, effectively executing a Denial of Service attack.
  */
 abstract contract GovernorTimelockControl is Governor {
-    TimelockController private _timelock;
-    mapping(uint256 proposalId => bytes32) private _timelockIds;
+    ProposalExecutor private _executorRouter;
 
     /**
      * @dev Emitted when the timelock controller used for proposal execution is modified.
      */
-    event TimelockChange(address oldTimelock, address newTimelock);
+    event ExecutorChange(address oldExecutor, address newExecutor);
 
     /**
      * @dev Set the timelock.
      */
-    constructor(TimelockController timelockAddress) {
-        _updateTimelock(timelockAddress);
+    constructor(ProposalExecutor executorAddress) {
+        _updateExecutor(executorAddress);
     }
 
     /**
@@ -48,10 +48,11 @@ abstract contract GovernorTimelockControl is Governor {
             return currentState;
         }
 
-        bytes32 queueid = _timelockIds[proposalId];
-        if (_timelock.isOperationPending(queueid)) {
+        uint8 proposalType = super.proposalType(proposalId);
+
+        if (_executorRouter.isOperationPending(proposalId, proposalType)) {
             return ProposalState.Queued;
-        } else if (_timelock.isOperationDone(queueid)) {
+        } else if (_executorRouter.isOperationDone(proposalId, proposalType)) {
             // This can happen if the proposal is executed directly on the timelock.
             return ProposalState.Executed;
         } else {
@@ -64,7 +65,7 @@ abstract contract GovernorTimelockControl is Governor {
      * @dev Public accessor to check the address of the timelock
      */
     function timelock() public view virtual returns (address) {
-        return address(_timelock);
+        return address(_executorRouter);
     }
 
     /**
@@ -84,11 +85,9 @@ abstract contract GovernorTimelockControl is Governor {
         bytes[] memory calldatas,
         bytes32 descriptionHash
     ) internal virtual override returns (uint48) {
-        uint256 delay = _timelock.getMinDelay();
-
         bytes32 salt = _timelockSalt(descriptionHash);
-        _timelockIds[proposalId] = _timelock.hashOperationBatch(targets, values, calldatas, 0, salt);
-        _timelock.scheduleBatch(targets, values, calldatas, 0, salt, delay);
+        uint8 proposalType = super.proposalType(proposalId);
+        uint256 delay = _executorRouter.scheduleBatch(targets, values, calldatas, 0, salt, proposalId, proposalType);
 
         return SafeCast.toUint48(block.timestamp + delay);
     }
@@ -105,9 +104,23 @@ abstract contract GovernorTimelockControl is Governor {
         bytes32 descriptionHash
     ) internal virtual override {
         // execute
-        _timelock.executeBatch{value: msg.value}(targets, values, calldatas, 0, _timelockSalt(descriptionHash));
-        // cleanup for refund
-        delete _timelockIds[proposalId];
+        _executorRouter.executeBatch{value: msg.value}(
+            targets,
+            values,
+            calldatas,
+            0,
+            _timelockSalt(descriptionHash),
+            proposalId,
+            super.proposalType(proposalId)
+        );
+    }
+
+    /**
+     * @dev Address through which the governor executes action. Will be overloaded by module that execute actions
+     * through another contract such as a timelock.
+     */
+    function _executor() internal view virtual override returns (address) {
+        return address(_executorRouter);
     }
 
     /**
@@ -121,26 +134,18 @@ abstract contract GovernorTimelockControl is Governor {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal virtual override returns (uint256) {
-        uint256 proposalId = super._cancel(targets, values, calldatas, descriptionHash);
+        uint256 proposalId = super._cancel(targets, values, calldatas, descriptionHash, proposalType);
 
-        bytes32 timelockId = _timelockIds[proposalId];
-        if (timelockId != 0) {
-            // cancel
-            _timelock.cancel(timelockId);
-            // cleanup
-            delete _timelockIds[proposalId];
-        }
+        _executorRouter.cancel(proposalId, proposalType);
 
         return proposalId;
     }
 
-    /**
-     * @dev Address through which the governor executes action. In this case, the timelock.
-     */
-    function _executor() internal view virtual override returns (address) {
-        return address(_timelock);
+    function _isExecutor() internal view virtual override returns (bool) {
+        return _executorRouter.isAddressInProposalTimelocks(_msgSender());
     }
 
     /**
@@ -149,13 +154,13 @@ abstract contract GovernorTimelockControl is Governor {
      *
      * CAUTION: It is not recommended to change the timelock while there are other queued governance proposals.
      */
-    function updateTimelock(TimelockController newTimelock) external virtual onlyGovernance {
-        _updateTimelock(newTimelock);
+    function updateExecutor(ProposalExecutor newExecutor) external virtual onlyGovernance {
+        _updateExecutor(newExecutor);
     }
 
-    function _updateTimelock(TimelockController newTimelock) private {
-        emit TimelockChange(address(_timelock), address(newTimelock));
-        _timelock = newTimelock;
+    function _updateExecutor(ProposalExecutor newExecutor) private {
+        emit ExecutorChange(address(_executorRouter), address(newExecutor));
+        _executorRouter = newExecutor;
     }
 
     /**

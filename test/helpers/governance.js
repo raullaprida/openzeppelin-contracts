@@ -17,6 +17,10 @@ class GovernorHelper {
     return this;
   }
 
+  modifyProposalType(proposalType) {
+    this.propType = proposalType;
+  }
+
   /// Setter and getters
   /**
    * Specify a proposal either as
@@ -28,16 +32,23 @@ class GovernorHelper {
       this.targets = actions.map(a => a.target);
       this.values = actions.map(a => a.value || 0n);
       this.data = actions.map(a => a.data || '0x');
+      this.propType = actions.map(a => a.propType || 0)[0];
     } else {
-      ({ targets: this.targets, values: this.values, data: this.data } = actions);
+      ({ targets: this.targets, values: this.values, data: this.data, propType: this.propType } = actions);
     }
     this.description = description;
+    if (this.propType == undefined) {
+      this.propType = 0;
+    }
     return this;
   }
 
   get id() {
     return ethers.keccak256(
-      ethers.AbiCoder.defaultAbiCoder().encode(['address[]', 'uint256[]', 'bytes[]', 'bytes32'], this.shortProposal),
+      ethers.AbiCoder.defaultAbiCoder().encode(
+        ['address[]', 'uint256[]', 'bytes[]', 'bytes32', 'uint8'],
+        this.shortProposal,
+      ),
     );
   }
 
@@ -52,12 +63,12 @@ class GovernorHelper {
 
   // condensed version for queueing end executing
   get shortProposal() {
-    return [this.targets, this.values, this.data, this.descriptionHash];
+    return [this.targets, this.values, this.data, this.descriptionHash, this.propType];
   }
 
   // full version for proposing
   get fullProposal() {
-    return [this.targets, this.values, this.data, this.description];
+    return [this.targets, this.values, this.data, this.description, this.propType];
   }
 
   get currentProposal() {

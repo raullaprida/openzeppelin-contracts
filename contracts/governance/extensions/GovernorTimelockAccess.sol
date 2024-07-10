@@ -185,9 +185,10 @@ abstract contract GovernorTimelockAccess is Governor {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        string memory description
+        string memory description,
+        uint8 proposalType
     ) public virtual override returns (uint256) {
-        uint256 proposalId = super.propose(targets, values, calldatas, description);
+        uint256 proposalId = super.propose(targets, values, calldatas, description, proposalType);
 
         uint32 neededDelay = baseDelaySeconds();
 
@@ -283,9 +284,10 @@ abstract contract GovernorTimelockAccess is Governor {
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal virtual override returns (uint256) {
-        uint256 proposalId = super._cancel(targets, values, calldatas, descriptionHash);
+        uint256 proposalId = super._cancel(targets, values, calldatas, descriptionHash, proposalType);
 
         uint48 etaSeconds = SafeCast.toUint48(proposalEta(proposalId));
 

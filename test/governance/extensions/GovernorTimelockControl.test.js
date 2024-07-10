@@ -35,25 +35,36 @@ describe('GovernorTimelockControl', function () {
       const receiver = await ethers.deployContract('CallReceiverMock');
 
       const token = await ethers.deployContract(Token, [tokenName, tokenSymbol, version]);
-      const timelock = await ethers.deployContract('TimelockController', [delay, [], [], deployer]);
+      const timelock_1 = await ethers.deployContract('TimelockController', [delay, [], [], deployer]);
+      const timelock_2 = await ethers.deployContract('TimelockController', [delay, [], [], deployer]);
+      const executor = await ethers.deployContract('ProposalExecutor', [[timelock_1.target, timelock_2.target]]);
       const mock = await ethers.deployContract('$GovernorTimelockControlMock', [
         name,
         votingDelay,
         votingPeriod,
         0n,
-        timelock,
+        executor,
         token,
         0n,
       ]);
 
-      await owner.sendTransaction({ to: timelock, value });
+      await owner.sendTransaction({ to: timelock_1, value });
+      await owner.sendTransaction({ to: timelock_2, value });
+
       await token.$_mint(owner, tokenSupply);
-      await timelock.grantRole(PROPOSER_ROLE, mock);
-      await timelock.grantRole(PROPOSER_ROLE, owner);
-      await timelock.grantRole(CANCELLER_ROLE, mock);
-      await timelock.grantRole(CANCELLER_ROLE, owner);
-      await timelock.grantRole(EXECUTOR_ROLE, ethers.ZeroAddress);
-      await timelock.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
+      await timelock_1.grantRole(PROPOSER_ROLE, executor);
+      await timelock_1.grantRole(PROPOSER_ROLE, owner);
+      await timelock_1.grantRole(CANCELLER_ROLE, executor);
+      await timelock_1.grantRole(CANCELLER_ROLE, owner);
+      await timelock_1.grantRole(EXECUTOR_ROLE, ethers.ZeroAddress);
+      await timelock_1.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
+
+      await timelock_2.grantRole(PROPOSER_ROLE, executor);
+      await timelock_2.grantRole(PROPOSER_ROLE, owner);
+      await timelock_2.grantRole(CANCELLER_ROLE, executor);
+      await timelock_2.grantRole(CANCELLER_ROLE, owner);
+      await timelock_2.grantRole(EXECUTOR_ROLE, ethers.ZeroAddress);
+      await timelock_2.revokeRole(DEFAULT_ADMIN_ROLE, deployer);
 
       const helper = new GovernorHelper(mock, mode);
       await helper.connect(owner).delegate({ token, to: voter1, value: ethers.parseEther('10') });
@@ -61,7 +72,22 @@ describe('GovernorTimelockControl', function () {
       await helper.connect(owner).delegate({ token, to: voter3, value: ethers.parseEther('5') });
       await helper.connect(owner).delegate({ token, to: voter4, value: ethers.parseEther('2') });
 
-      return { deployer, owner, voter1, voter2, voter3, voter4, other, receiver, token, mock, timelock, helper };
+      return {
+        deployer,
+        owner,
+        voter1,
+        voter2,
+        voter3,
+        voter4,
+        other,
+        receiver,
+        token,
+        mock,
+        timelock_1,
+        timelock_2,
+        helper,
+        executor,
+      };
     };
 
     describe(`using ${Token}`, function () {
@@ -80,7 +106,7 @@ describe('GovernorTimelockControl', function () {
           '<proposal description>',
         );
 
-        this.proposal.timelockid = await this.timelock.hashOperationBatch(
+        this.proposal.timelockid = await this.timelock_1.hashOperationBatch(
           ...this.proposal.shortProposal.slice(0, 3),
           ethers.ZeroHash,
           timelockSalt(this.mock.target, this.proposal.shortProposal[3]),
@@ -101,7 +127,7 @@ describe('GovernorTimelockControl', function () {
         expect(await this.mock.votingPeriod()).to.equal(votingPeriod);
         expect(await this.mock.quorum(0n)).to.equal(0n);
 
-        expect(await this.mock.timelock()).to.equal(this.timelock);
+        expect(await this.mock.timelock()).to.equal(this.executor);
       });
 
       it('nominal', async function () {
@@ -128,15 +154,15 @@ describe('GovernorTimelockControl', function () {
         await expect(txQueue)
           .to.emit(this.mock, 'ProposalQueued')
           .withArgs(this.proposal.id, anyValue)
-          .to.emit(this.timelock, 'CallScheduled')
+          .to.emit(this.timelock_1, 'CallScheduled')
           .withArgs(this.proposal.timelockid, ...Array(6).fill(anyValue))
-          .to.emit(this.timelock, 'CallSalt')
+          .to.emit(this.timelock_1, 'CallSalt')
           .withArgs(this.proposal.timelockid, anyValue);
 
         await expect(txExecute)
           .to.emit(this.mock, 'ProposalExecuted')
           .withArgs(this.proposal.id)
-          .to.emit(this.timelock, 'CallExecuted')
+          .to.emit(this.timelock_1, 'CallExecuted')
           .withArgs(this.proposal.timelockid, ...Array(4).fill(anyValue))
           .to.emit(this.receiver, 'MockFunctionCalled');
       });
@@ -157,6 +183,20 @@ describe('GovernorTimelockControl', function () {
                 GovernorHelper.proposalStatesToBitMap([ProposalState.Succeeded]),
               );
           });
+          it('[multi_bucket]: NOT revert since not already queued', async function () {
+            await this.helper.propose();
+            await this.helper.waitForSnapshot();
+            await this.helper.connect(this.voter1).vote({ support: VoteType.For });
+            await this.helper.waitForDeadline();
+            await this.helper.queue();
+            await this.helper.modifyProposalType(1);
+            await this.helper.propose();
+            await this.helper.waitForSnapshot();
+            await this.helper.connect(this.voter1).vote({ support: VoteType.For });
+            await this.helper.waitForDeadline();
+            //ProposalQueued
+            await expect(this.helper.queue()).to.emit(this.mock, 'ProposalQueued').withArgs(this.proposal.id, anyValue);
+          });
         });
 
         describe('on execute', function () {
@@ -169,7 +209,7 @@ describe('GovernorTimelockControl', function () {
             expect(await this.mock.state(this.proposal.id)).to.equal(ProposalState.Succeeded);
 
             await expect(this.helper.execute())
-              .to.be.revertedWithCustomError(this.timelock, 'TimelockUnexpectedOperationState')
+              .to.be.revertedWithCustomError(this.timelock_1, 'TimelockUnexpectedOperationState')
               .withArgs(this.proposal.timelockid, GovernorHelper.proposalStatesToBitMap(OperationState.Ready));
           });
 
@@ -183,7 +223,7 @@ describe('GovernorTimelockControl', function () {
             expect(await this.mock.state(this.proposal.id)).to.equal(ProposalState.Queued);
 
             await expect(this.helper.execute())
-              .to.be.revertedWithCustomError(this.timelock, 'TimelockUnexpectedOperationState')
+              .to.be.revertedWithCustomError(this.timelock_1, 'TimelockUnexpectedOperationState')
               .withArgs(this.proposal.timelockid, GovernorHelper.proposalStatesToBitMap(OperationState.Ready));
           });
 
@@ -213,7 +253,7 @@ describe('GovernorTimelockControl', function () {
             await this.helper.queue();
             await this.helper.waitForEta();
 
-            await this.timelock.executeBatch(
+            await this.timelock_1.executeBatch(
               ...this.proposal.shortProposal.slice(0, 3),
               ethers.ZeroHash,
               timelockSalt(this.mock.target, this.proposal.shortProposal[3]),
@@ -274,6 +314,31 @@ describe('GovernorTimelockControl', function () {
             );
         });
 
+        it('[multi-bucket] cancel proposal from other bucket after queue does not prevent executing', async function () {
+          await this.helper.modifyProposalType(0);
+          await this.helper.propose();
+          await this.helper.waitForSnapshot();
+          await this.helper.connect(this.voter1).vote({ support: VoteType.For });
+          await this.helper.waitForDeadline();
+          await this.helper.queue();
+
+          await this.helper.modifyProposalType(1);
+          await this.helper.propose();
+          await this.helper.waitForSnapshot();
+          await this.helper.connect(this.voter1).vote({ support: VoteType.For });
+          await this.helper.waitForDeadline();
+          await this.helper.queue();
+
+          await expect(this.helper.cancel('internal')).to.emit(this.mock, 'ProposalCanceled').withArgs(this.helper.id);
+
+          expect(await this.mock.state(this.helper.id)).to.equal(ProposalState.Canceled);
+          console.log(this.helper.propType);
+
+          await this.helper.modifyProposalType(0);
+          await this.helper.waitForEta();
+          await expect(this.helper.execute()).to.emit(this.mock, 'ProposalExecuted').withArgs(this.helper.id);
+        });
+
         it('cancel on timelock is reflected on governor', async function () {
           await this.helper.propose();
           await this.helper.waitForSnapshot();
@@ -283,8 +348,8 @@ describe('GovernorTimelockControl', function () {
 
           expect(await this.mock.state(this.proposal.id)).to.equal(ProposalState.Queued);
 
-          await expect(this.timelock.connect(this.owner).cancel(this.proposal.timelockid))
-            .to.emit(this.timelock, 'Cancelled')
+          await expect(this.timelock_1.connect(this.owner).cancel(this.proposal.timelockid))
+            .to.emit(this.timelock_1, 'Cancelled')
             .withArgs(this.proposal.timelockid);
 
           expect(await this.mock.state(this.proposal.id)).to.equal(ProposalState.Canceled);
@@ -317,6 +382,7 @@ describe('GovernorTimelockControl', function () {
                     0n,
                     this.token.interface.encodeFunctionData('transfer', [this.other.address, 1n]),
                   ]),
+                  propType: '0',
                 },
               ],
               '<proposal description>',
@@ -359,7 +425,35 @@ describe('GovernorTimelockControl', function () {
             await this.helper.waitForEta();
 
             await expect(this.helper.execute()).to.changeEtherBalances(
-              [this.timelock, this.mock, this.other],
+              [this.timelock_1, this.mock, this.other],
+              [-t2g, t2g - g2o, g2o],
+            );
+          });
+          it('is payable and can transfer eth to EOA - Proposal type 1', async function () {
+            const t2g = 128n; // timelock to governor
+            const g2o = 100n; // governor to eoa (other)
+
+            this.helper.setProposal(
+              [
+                {
+                  target: this.mock.target,
+                  value: t2g,
+                  data: this.mock.interface.encodeFunctionData('relay', [this.other.address, g2o, '0x']),
+                  propType: '1',
+                },
+              ],
+              '<proposal description>',
+            );
+
+            await this.helper.propose();
+            await this.helper.waitForSnapshot();
+            await this.helper.connect(this.voter1).vote({ support: VoteType.For });
+            await this.helper.waitForDeadline();
+            await this.helper.queue();
+            await this.helper.waitForEta();
+
+            await expect(this.helper.execute()).to.changeEtherBalances(
+              [this.timelock_2, this.mock, this.other],
               [-t2g, t2g - g2o, g2o],
             );
           });
@@ -373,18 +467,18 @@ describe('GovernorTimelockControl', function () {
               ethers.ZeroHash,
             ];
 
-            await this.timelock.connect(this.owner).schedule(...call, delay);
+            await this.timelock_1.connect(this.owner).schedule(...call, delay);
 
             await time.increaseBy.timestamp(delay);
 
             // Error bubbled up from Governor
-            await expect(this.timelock.connect(this.owner).execute(...call)).to.be.revertedWithPanic(
+            await expect(this.timelock_1.connect(this.owner).execute(...call)).to.be.revertedWithPanic(
               PANIC_CODES.POP_ON_EMPTY_ARRAY,
             );
           });
         });
 
-        describe('updateTimelock', function () {
+        describe('updateExecutor', function () {
           beforeEach(async function () {
             this.newTimelock = await ethers.deployContract('TimelockController', [
               delay,
@@ -392,10 +486,11 @@ describe('GovernorTimelockControl', function () {
               [this.mock],
               ethers.ZeroAddress,
             ]);
+            this.newExecutor = await ethers.deployContract('ProposalExecutor', [[this.newTimelock.target]]);
           });
 
           it('is protected', async function () {
-            await expect(this.mock.connect(this.owner).updateTimelock(this.newTimelock))
+            await expect(this.mock.connect(this.owner).updateExecutor(this.newExecutor))
               .to.be.revertedWithCustomError(this.mock, 'GovernorOnlyExecutor')
               .withArgs(this.owner);
           });
@@ -405,7 +500,7 @@ describe('GovernorTimelockControl', function () {
               [
                 {
                   target: this.mock.target,
-                  data: this.mock.interface.encodeFunctionData('updateTimelock', [this.newTimelock.target]),
+                  data: this.mock.interface.encodeFunctionData('updateExecutor', [this.newExecutor.target]),
                 },
               ],
               '<proposal description>',
@@ -419,10 +514,10 @@ describe('GovernorTimelockControl', function () {
             await this.helper.waitForEta();
 
             await expect(this.helper.execute())
-              .to.emit(this.mock, 'TimelockChange')
-              .withArgs(this.timelock, this.newTimelock);
+              .to.emit(this.mock, 'ExecutorChange')
+              .withArgs(this.executor, this.newExecutor);
 
-            expect(await this.mock.timelock()).to.equal(this.newTimelock);
+            expect(await this.mock.timelock()).to.equal(this.newExecutor);
           });
         });
 

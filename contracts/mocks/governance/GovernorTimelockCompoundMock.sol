@@ -58,9 +58,10 @@ abstract contract GovernorTimelockCompoundMock is
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal override(Governor, GovernorTimelockCompound) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
+        return super._cancel(targets, values, calldatas, descriptionHash, proposalType);
     }
 
     function _executor() internal view override(Governor, GovernorTimelockCompound) returns (address) {

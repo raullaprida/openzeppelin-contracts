@@ -39,9 +39,10 @@ abstract contract GovernorStorageMock is
         uint256[] memory values,
         bytes[] memory calldatas,
         string memory description,
-        address proposer
+        address proposer,
+        uint8 proposalType
     ) internal virtual override(Governor, GovernorStorage) returns (uint256) {
-        return super._propose(targets, values, calldatas, description, proposer);
+        return super._propose(targets, values, calldatas, description, proposer, proposalType);
     }
 
     function _queueOperations(
@@ -68,12 +69,17 @@ abstract contract GovernorStorageMock is
         address[] memory targets,
         uint256[] memory values,
         bytes[] memory calldatas,
-        bytes32 descriptionHash
+        bytes32 descriptionHash,
+        uint8 proposalType
     ) internal override(Governor, GovernorTimelockControl) returns (uint256) {
-        return super._cancel(targets, values, calldatas, descriptionHash);
+        return super._cancel(targets, values, calldatas, descriptionHash, proposalType);
     }
 
     function _executor() internal view override(Governor, GovernorTimelockControl) returns (address) {
         return super._executor();
+    }
+
+    function _isExecutor() internal view override(Governor, GovernorTimelockControl) returns (bool) {
+        return super._isExecutor();
     }
 }

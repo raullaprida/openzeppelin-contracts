@@ -20,6 +20,7 @@ abstract contract GovernorStorage is Governor {
         uint256[] values;
         bytes[] calldatas;
         bytes32 descriptionHash;
+        uint8 proposalType;
     }
 
     uint256[] private _proposalIds;
@@ -33,9 +34,10 @@ abstract contract GovernorStorage is Governor {
         uint256[] memory values,
         bytes[] memory calldatas,
         string memory description,
-        address proposer
+        address proposer,
+        uint8 proposalType
     ) internal virtual override returns (uint256) {
-        uint256 proposalId = super._propose(targets, values, calldatas, description, proposer);
+        uint256 proposalId = super._propose(targets, values, calldatas, description, proposer, proposalType);
 
         // store
         _proposalIds.push(proposalId);
@@ -43,7 +45,8 @@ abstract contract GovernorStorage is Governor {
             targets: targets,
             values: values,
             calldatas: calldatas,
-            descriptionHash: keccak256(bytes(description))
+            descriptionHash: keccak256(bytes(description)),
+            proposalType: proposalType
         });
 
         return proposalId;
@@ -55,7 +58,7 @@ abstract contract GovernorStorage is Governor {
     function queue(uint256 proposalId) public virtual {
         // here, using storage is more efficient than memory
         ProposalDetails storage details = _proposalDetails[proposalId];
-        queue(details.targets, details.values, details.calldatas, details.descriptionHash);
+        queue(details.targets, details.values, details.calldatas, details.descriptionHash, details.proposalType);
     }
 
     /**
@@ -64,7 +67,7 @@ abstract contract GovernorStorage is Governor {
     function execute(uint256 proposalId) public payable virtual {
         // here, using storage is more efficient than memory
         ProposalDetails storage details = _proposalDetails[proposalId];
-        execute(details.targets, details.values, details.calldatas, details.descriptionHash);
+        execute(details.targets, details.values, details.calldatas, details.descriptionHash, details.proposalType);
     }
 
     /**
@@ -73,7 +76,7 @@ abstract contract GovernorStorage is Governor {
     function cancel(uint256 proposalId) public virtual {
         // here, using storage is more efficient than memory
         ProposalDetails storage details = _proposalDetails[proposalId];
-        cancel(details.targets, details.values, details.calldatas, details.descriptionHash);
+        cancel(details.targets, details.values, details.calldatas, details.descriptionHash, details.proposalType);
     }
 
     /**
@@ -88,13 +91,13 @@ abstract contract GovernorStorage is Governor {
      */
     function proposalDetails(
         uint256 proposalId
-    ) public view virtual returns (address[] memory, uint256[] memory, bytes[] memory, bytes32) {
+    ) public view virtual returns (address[] memory, uint256[] memory, bytes[] memory, bytes32, uint8) {
         // here, using memory is more efficient than storage
         ProposalDetails memory details = _proposalDetails[proposalId];
         if (details.descriptionHash == 0) {
             revert GovernorNonexistentProposal(proposalId);
         }
-        return (details.targets, details.values, details.calldatas, details.descriptionHash);
+        return (details.targets, details.values, details.calldatas, details.descriptionHash, details.proposalType);
     }
 
     /**
@@ -102,14 +105,15 @@ abstract contract GovernorStorage is Governor {
      */
     function proposalDetailsAt(
         uint256 index
-    ) public view virtual returns (uint256, address[] memory, uint256[] memory, bytes[] memory, bytes32) {
+    ) public view virtual returns (uint256, address[] memory, uint256[] memory, bytes[] memory, bytes32, uint8) {
         uint256 proposalId = _proposalIds[index];
         (
             address[] memory targets,
             uint256[] memory values,
             bytes[] memory calldatas,
-            bytes32 descriptionHash
+            bytes32 descriptionHash,
+            uint8 proposalType
         ) = proposalDetails(proposalId);
-        return (proposalId, targets, values, calldatas, descriptionHash);
+        return (proposalId, targets, values, calldatas, descriptionHash, proposalType);
     }
 }
